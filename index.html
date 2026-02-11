@@ -101,7 +101,6 @@
                     <tr>
                         <th>Name</th>
                         <th>Batch #</th>
-                        <th>Mfg Date</th>
                         <th>Expiry Date</th>
                         <th>Action</th>
                     </tr>
@@ -133,12 +132,6 @@
                         <label class="form-label">Batch Number</label>
                         <input type="text" id="medBatch" class="form-control" required>
                         <div class="invalid-feedback">Please enter the batch number.</div>
-                    </div>
-
-                    <div class="mb-2">
-                        <label class="form-label">Mfg Date</label>
-                        <input type="date" id="mfgDate" class="form-control" required>
-                        <div class="invalid-feedback">Please select a manufacturing date.</div>
                     </div>
 
                     <div class="mb-2">
@@ -267,7 +260,6 @@
               <tr class="${isExpired ? 'table-danger' : ''}">
                   <td>${item.name}</td>
                   <td>${item.batch}</td>
-                  <td>${new Date(item.mfgDate).toLocaleDateString()}</td>
                   <td class="${isExpired ? 'fw-bold' : ''}">${new Date(item.expDate).toLocaleDateString()}</td>
                   <td>
                       <div class="btn-group">
@@ -321,7 +313,6 @@
             id: document.getElementById('medId').value,
             name: document.getElementById('medName').value,
             batch: document.getElementById('medBatch').value,
-            mfgDate: document.getElementById('mfgDate').value,
             expDate: document.getElementById('expDate').value
         };
 
@@ -366,7 +357,6 @@
         document.getElementById('medId').value = item.id;
         document.getElementById('medName').value = item.name;
         document.getElementById('medBatch').value = item.batch;
-        document.getElementById('mfgDate').value = item.mfgDate.split('T')[0];
         document.getElementById('expDate').value = item.expDate.split('T')[0];
         new bootstrap.Modal(document.getElementById('medModal')).show();
     }
