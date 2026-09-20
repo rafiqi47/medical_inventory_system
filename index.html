@@ -6,17 +6,21 @@
     <title>Medicine Inventory</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
-        #mainPage { display: none; }
+        #appShell, #invoicesPage, #invoiceFormPage { display: none; }
         .expiring-soon { background-color: #fff3cd !important; }
         .expired { background-color: #f8d7da !important; }
+        #medSearchResults { position: relative; }
+        #medSearchResults .list-group { position: absolute; z-index: 1000; width: 100%; max-height: 220px; overflow-y: auto; }
+        #invoicePrintArea { display: none; }
+        #invoicePrintArea table { width: 100%; }
+        #invoicePrintArea .invoice-header { display: flex; justify-content: space-between; margin-bottom: 20px; }
 
         @media print {
-          /* Hide everything except the table area */
-          nav, .btn, #search, #filter, #loaderOverlay, .modal {
+          /* Hide everything except the printable area */
+          nav, .btn, #search, #filter, #loaderOverlay, .modal, #medSearchResults {
               display: none !important;
           }
-          
-          /* Ensure the table takes up the full width of the page */
+
           .container {
               width: 100% !important;
               max-width: none !important;
@@ -34,10 +38,17 @@
               padding: 8px !important;
           }
 
-          /* Remove background colors for better printing, or keep them if you want */
           .table-danger {
               background-color: #f8d7da !important;
               -webkit-print-color-adjust: exact;
+          }
+
+          /* When printing a single invoice, hide the normal container and show only the invoice */
+          body.printing-invoice .container {
+              display: none !important;
+          }
+          body.printing-invoice #invoicePrintArea {
+              display: block !important;
           }
       }
     </style>
@@ -60,55 +71,145 @@
     </div>
 </div>
 
-<div id="mainPage">
+<!-- App shell: navbar shared across all logged-in views -->
+<div id="appShell">
     <nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-4">
         <div class="container">
             <a class="navbar-brand" href="#">PharmaKeep</a>
+            <div class="d-flex align-items-center">
+                <button class="btn btn-outline-light btn-sm me-2" onclick="showInventoryView()">Inventory</button>
+                <button class="btn btn-outline-light btn-sm" onclick="showInvoicesView()">Invoices</button>
+            </div>
             <div class="ms-auto d-flex align-items-center">
                 <span id="userDisplay" class="text-light me-3 small"></span>
-                
-                <button class="btn btn-success btn-sm" data-bs-toggle="modal" data-bs-target="#medModal" onclick="clearForm()">Add New</button>
-                <button class="btn btn-outline-light btn-sm ms-2" onclick="logout()">Logout</button>
+                <button class="btn btn-outline-light btn-sm" onclick="logout()">Logout</button>
             </div>
         </div>
     </nav>
 
-    <div class="container">
-        <div class="row mb-3">
-            <div class="col-md-6">
-                <input type="text" id="search" class="form-control" placeholder="Search by name or batch..." onkeyup="renderTable()">
+    <!-- ===================== INVENTORY VIEW ===================== -->
+    <div id="inventoryView">
+        <div class="container">
+            <div class="row mb-3">
+                <div class="col-md-6 d-flex align-items-center">
+                    <input type="text" id="search" class="form-control" placeholder="Search by name or batch..." onkeyup="renderTable()">
+                </div>
+                <div class="col-md-6 text-end">
+                    <select id="filter" class="form-select w-auto d-inline-block" onchange="renderTable()">
+                      <option value="all">All Inventory</option>
+                      <option value="expired">Already Expired</option>
+                      <option value="30">Expiring in ≤ 1 Month</option>
+                      <option value="90">Expiring in ≤ 3 Months</option>
+                      <option value="180">Expiring in ≤ 6 Months</option>
+                  </select>
+                </div>
             </div>
-            <div class="col-md-6 text-end">
 
-                <select id="filter" class="form-select w-auto d-inline-block" onchange="renderTable()">
-                  <option value="all">All Inventory</option>
-                  <option value="expired">Already Expired</option>
-                  <option value="30">Expiring in ≤ 1 Month</option>
-                  <option value="90">Expiring in ≤ 3 Months</option>
-              </select>
+            <div class="col-md-12 text-end mb-3">
+                <button class="btn btn-success btn-sm" data-bs-toggle="modal" data-bs-target="#medModal" onclick="clearForm()">Add New</button>
+                <button onclick="printInventory()" class="btn btn-secondary btn-sm shadow-sm">
+                    <i class="bi bi-printer"></i> Print
+                </button>
             </div>
-        </div>
 
-        <div class="col-md-12 text-end mb-3">
-          <button onclick="printInventory()" class="btn btn-secondary shadow-sm">
-              <i class="bi bi-printer"></i> Print
-          </button>
-      </div>
-
-        <div class="table-responsive bg-white shadow-sm p-3">
-            <table class="table table-hover">
-                <thead>
-                    <tr>
-                        <th>Name</th>
-                        <th>Batch #</th>
-                        <th>Expiry Date</th>
-                        <th>Action</th>
-                    </tr>
-                </thead>
-                <tbody id="medTable"></tbody>
-            </table>
+            <div class="table-responsive bg-white shadow-sm p-3">
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Batch #</th>
+                            <th>Expiry Date</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="medTable"></tbody>
+                </table>
+            </div>
         </div>
     </div>
+
+    <!-- ===================== INVOICES LIST VIEW ===================== -->
+    <div id="invoicesPage">
+        <div class="container">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h4 class="mb-0">Invoices</h4>
+                <button class="btn btn-success btn-sm" onclick="openNewInvoice()">New Invoice</button>
+            </div>
+
+            <div class="table-responsive bg-white shadow-sm p-3">
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th>Invoice #</th>
+                            <th>Date</th>
+                            <th>Total (Rs.)</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="invoicesTable"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===================== INVOICE FORM VIEW ===================== -->
+    <div id="invoiceFormPage">
+        <div class="container">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h4 class="mb-0" id="invoiceFormTitle">New Invoice</h4>
+                <button class="btn btn-outline-secondary btn-sm" onclick="showInvoicesView()">Back to Invoices</button>
+            </div>
+
+            <div class="card shadow-sm p-3 mb-3">
+                <label class="form-label">Search Medicine</label>
+                <input type="text" id="invMedSearch" class="form-control" placeholder="Type medicine name..." oninput="filterMedSearch()" autocomplete="off">
+                <div id="medSearchResults"></div>
+            </div>
+
+            <div class="table-responsive bg-white shadow-sm p-3 mb-3">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Medicine</th>
+                            <th style="width:25%">Quantity</th>
+                            <th style="width:20%">Price (Rs.)</th>
+                            <th style="width:10%">Remove</th>
+                        </tr>
+                    </thead>
+                    <tbody id="invoiceItemsTable"></tbody>
+                    <tfoot>
+                        <tr>
+                            <td colspan="2"></td>
+                            <td class="fw-bold">Total: Rs. <span id="invoiceTotal">0</span></td>
+                            <td></td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+
+            <button class="btn btn-primary" onclick="saveInvoice()">Save Invoice</button>
+        </div>
+    </div>
+</div>
+
+<!-- Hidden printable invoice content, only shown via print CSS -->
+<div id="invoicePrintArea">
+    <div class="invoice-header">
+        <div>
+            <h3>PharmaKeep - Invoice</h3>
+            <div id="printInvoiceNumber"></div>
+            <div id="printInvoiceDate"></div>
+        </div>
+    </div>
+    <table>
+        <thead>
+            <tr><th>Medicine</th><th>Quantity</th><th>Price (Rs.)</th></tr>
+        </thead>
+        <tbody id="printInvoiceItems"></tbody>
+        <tfoot>
+            <tr><td colspan="2" style="text-align:right;font-weight:bold;">Total</td><td id="printInvoiceTotal" style="font-weight:bold;"></td></tr>
+        </tfoot>
+    </table>
 </div>
 
 <div class="modal fade" id="medModal" tabindex="-1">
@@ -121,7 +222,7 @@
                 </div>
                 <div class="modal-body">
                     <input type="hidden" id="medId">
-                    
+
                     <div class="mb-2">
                         <label class="form-label">Medicine Name</label>
                         <input type="text" id="medName" class="form-control" required>
@@ -154,6 +255,9 @@
 <script>
     const API_URL = "https://script.google.com/macros/s/AKfycbzaVeUh7UdIHU03CB-JqpeZywyQ7FU0OWEQ6MQubaHoHy1nXEejGs-wlmIbvBi8kL1ZlA/exec";
     let inventory = [];
+    let invoices = [];
+    let currentInvoiceItems = [];
+    let editingInvoiceId = '';
 
     function showLoader() {
         if(localStorage.getItem('isLoggedIn') === 'true') {
@@ -168,16 +272,36 @@
     // Function to toggle views
       function showMainPage() {
           const username = localStorage.getItem('username');
-          
+
           document.getElementById('loginPage').style.display = 'none';
-          document.getElementById('mainPage').style.display = 'block';
-          
+          document.getElementById('appShell').style.display = 'block';
+
           // Set the username in the navbar
           if (username) {
               document.getElementById('userDisplay').innerText = `Logged in as: ${username}`;
           }
-          
-          loadData(); // Fetch the inventory from Google Sheets
+
+          showInventoryView();
+      }
+
+      function showInventoryView() {
+          document.getElementById('inventoryView').style.display = 'block';
+          document.getElementById('invoicesPage').style.display = 'none';
+          document.getElementById('invoiceFormPage').style.display = 'none';
+          loadData();
+      }
+
+      function showInvoicesView() {
+          document.getElementById('inventoryView').style.display = 'none';
+          document.getElementById('invoicesPage').style.display = 'block';
+          document.getElementById('invoiceFormPage').style.display = 'none';
+          loadInvoices();
+      }
+
+      function showInvoiceFormView() {
+          document.getElementById('inventoryView').style.display = 'none';
+          document.getElementById('invoicesPage').style.display = 'none';
+          document.getElementById('invoiceFormPage').style.display = 'block';
       }
 
         async function login() {
@@ -219,7 +343,7 @@
 
     function renderTable() {
       const search = document.getElementById('search').value.toLowerCase();
-      const filterDays = document.getElementById('filter').value; 
+      const filterDays = document.getElementById('filter').value;
       const tbody = document.getElementById('medTable');
       tbody.innerHTML = '';
 
@@ -245,7 +369,7 @@
               return diffInDays < 0;
           }
 
-          // Logic: 
+          // Logic:
           // 1. diffInDays >= 0 (Include today and future dates)
           // 2. diffInDays <= filterDays (Check threshold like 30, 90, 180)
           const threshold = parseInt(filterDays);
@@ -255,30 +379,34 @@
           // ... rest of your row rendering code
           const expDate = new Date(item.expDate);
           const isExpired = expDate.setHours(0,0,0,0) < today.setHours(0,0,0,0);
-          
+
           tbody.innerHTML += `
               <tr class="${isExpired ? 'table-danger' : ''}">
-                  <td>${item.name}</td>
-                  <td>${item.batch}</td>
+                  <td>${escapeHtml(item.name)}</td>
+                  <td>${escapeHtml(item.batch)}</td>
                   <td class="${isExpired ? 'fw-bold' : ''}">${new Date(item.expDate).toLocaleDateString()}</td>
                   <td>
                       <div class="btn-group">
-                          <button class="btn btn-sm btn-warning" onclick='openEdit(${JSON.stringify(item)})'>Edit</button>
+                          <button class="btn btn-sm btn-warning" onclick="openEditById('${item.id}')">Edit</button>
                           <button class="btn btn-sm btn-danger" onclick="deleteMedicine('${item.id}')">Delete</button>
                       </div>
                   </td>
               </tr>`;
       });
     }
+
+    function escapeHtml(str) {
+        return String(str).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
+
     async function deleteMedicine(id) {
         if (confirm("Are you sure you want to delete this medicine?")) {
-            // Find the button and show loading state
-            const resp = await fetch(API_URL, { 
-                method: 'POST', 
+            const resp = await fetch(API_URL, {
+                method: 'POST',
                 body: JSON.stringify({ action: 'delete', id: id })
             });
             const result = await resp.json();
-            
+
             if (result.success) {
                 loadData(); // Refresh table
             } else {
@@ -290,7 +418,7 @@
     // Add an event listener to the form
     document.getElementById('medicineForm').addEventListener('submit', function (event) {
         event.preventDefault(); // Stop the form from refreshing the page
-        
+
         const form = event.target;
 
         if (!form.checkValidity()) {
@@ -318,12 +446,12 @@
 
         try {
             await fetch(API_URL, { method: 'POST', body: JSON.stringify(data)});
-            
+
             // Success: Hide modal and reset form
             const modalEl = document.getElementById('medModal');
             const modalInstance = bootstrap.Modal.getInstance(modalEl);
             modalInstance.hide();
-            
+
             loadData(); // Refresh the table
         } catch (error) {
             alert("Error saving data. Please try again.");
@@ -334,43 +462,222 @@
     }
 
     function printInventory() {
-        // We add a title temporarily if you want it to show on the paper
         const originalTitle = document.title;
-        const username = localStorage.getItem('username') || 'User';
         document.title = "Medicine Inventory Report - " + new Date().toLocaleDateString();
-        
+
         window.print();
-        
-        // Restore original title
+
         document.title = originalTitle;
     }
 
     function clearForm() {
         const form = document.getElementById('medicineForm');
-        form.reset(); // Clears all inputs
-        form.classList.remove('was-validated'); // Removes red error borders
+        form.reset();
+        form.classList.remove('was-validated');
         document.getElementById('medId').value = '';
         document.getElementById('modalTitle').innerText = "Add New Medicine";
     }
 
-    function openEdit(item) {
+    function openEditById(id) {
+        const item = inventory.find(i => i.id == id);
+        if (!item) return;
         document.getElementById('medId').value = item.id;
         document.getElementById('medName').value = item.name;
         document.getElementById('medBatch').value = item.batch;
         document.getElementById('expDate').value = item.expDate.split('T')[0];
+        document.getElementById('modalTitle').innerText = "Edit Medicine";
         new bootstrap.Modal(document.getElementById('medModal')).show();
-    }
-
-    function clearForm() {
-        document.getElementById('medId').value = '';
-        document.getElementById('medName').value = '';
-        document.getElementById('medBatch').value = '';
     }
 
     function logout() {
         localStorage.removeItem('isLoggedIn');
         localStorage.removeItem('username');
-        location.reload(); 
+        location.reload();
+    }
+
+    /* ===================== INVOICES ===================== */
+
+    async function loadInvoices() {
+        showLoader();
+        try {
+            const resp = await fetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'getInvoices' })});
+            invoices = await resp.json();
+            renderInvoicesTable();
+        } finally {
+            hideLoader();
+        }
+    }
+
+    function renderInvoicesTable() {
+        const tbody = document.getElementById('invoicesTable');
+        tbody.innerHTML = '';
+        invoices.slice().reverse().forEach(inv => {
+            tbody.innerHTML += `
+                <tr>
+                    <td>${escapeHtml(inv.invoiceNumber)}</td>
+                    <td>${new Date(inv.date).toLocaleDateString()}</td>
+                    <td>${inv.total}</td>
+                    <td>
+                        <div class="btn-group">
+                            <button class="btn btn-sm btn-warning" onclick="editInvoice('${inv.id}')">Edit</button>
+                            <button class="btn btn-sm btn-secondary" onclick="printSingleInvoice('${inv.id}')">Print</button>
+                            <button class="btn btn-sm btn-danger" onclick="deleteInvoice('${inv.id}')">Delete</button>
+                        </div>
+                    </td>
+                </tr>`;
+        });
+    }
+
+    async function ensureInventoryLoaded() {
+        if (!inventory || inventory.length === 0) {
+            const resp = await fetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'getData' })});
+            inventory = await resp.json();
+        }
+    }
+
+    async function openNewInvoice() {
+        editingInvoiceId = '';
+        currentInvoiceItems = [];
+        document.getElementById('invoiceFormTitle').innerText = 'New Invoice';
+        document.getElementById('invMedSearch').value = '';
+        document.getElementById('medSearchResults').innerHTML = '';
+        await ensureInventoryLoaded();
+        renderInvoiceItemsTable();
+        showInvoiceFormView();
+    }
+
+    function editInvoice(id) {
+        const inv = invoices.find(i => i.id == id);
+        if (!inv) return;
+        editingInvoiceId = inv.id;
+        currentInvoiceItems = JSON.parse(JSON.stringify(inv.items || []));
+        document.getElementById('invoiceFormTitle').innerText = 'Edit Invoice ' + inv.invoiceNumber;
+        document.getElementById('invMedSearch').value = '';
+        document.getElementById('medSearchResults').innerHTML = '';
+        ensureInventoryLoaded().then(() => {
+            renderInvoiceItemsTable();
+            showInvoiceFormView();
+        });
+    }
+
+    function filterMedSearch() {
+        const term = document.getElementById('invMedSearch').value.toLowerCase().trim();
+        const resultsDiv = document.getElementById('medSearchResults');
+        if (!term) { resultsDiv.innerHTML = ''; return; }
+
+        const matches = inventory.filter(m => m.name.toLowerCase().includes(term)).slice(0, 8);
+        if (matches.length === 0) {
+            resultsDiv.innerHTML = '<div class="list-group"><div class="list-group-item text-muted">No matching medicine</div></div>';
+            return;
+        }
+
+        resultsDiv.innerHTML = '<div class="list-group">' + matches.map(m =>
+            `<button type="button" class="list-group-item list-group-item-action" onclick="addMedToInvoice('${m.id}')">${escapeHtml(m.name)} <small class="text-muted">(Batch: ${escapeHtml(m.batch)})</small></button>`
+        ).join('') + '</div>';
+    }
+
+    function addMedToInvoice(medId) {
+        const med = inventory.find(m => m.id == medId);
+        if (!med) return;
+        currentInvoiceItems.push({ name: med.name, quantity: '', price: '' });
+        document.getElementById('invMedSearch').value = '';
+        document.getElementById('medSearchResults').innerHTML = '';
+        renderInvoiceItemsTable();
+    }
+
+    function updateItemField(idx, field, value) {
+        currentInvoiceItems[idx][field] = value;
+        if (field === 'price') updateInvoiceTotal();
+    }
+
+    function removeInvoiceItem(idx) {
+        currentInvoiceItems.splice(idx, 1);
+        renderInvoiceItemsTable();
+    }
+
+    function renderInvoiceItemsTable() {
+        const tbody = document.getElementById('invoiceItemsTable');
+        tbody.innerHTML = '';
+        currentInvoiceItems.forEach((item, idx) => {
+            tbody.innerHTML += `
+                <tr>
+                    <td>${escapeHtml(item.name)}</td>
+                    <td><input type="text" class="form-control form-control-sm" placeholder="e.g. 4 tablets" value="${escapeHtml(item.quantity)}" oninput="updateItemField(${idx},'quantity',this.value)"></td>
+                    <td><input type="number" min="0" step="0.01" class="form-control form-control-sm" value="${item.price}" oninput="updateItemField(${idx},'price',this.value)"></td>
+                    <td><button class="btn btn-sm btn-danger" onclick="removeInvoiceItem(${idx})">Remove</button></td>
+                </tr>`;
+        });
+        updateInvoiceTotal();
+    }
+
+    function updateInvoiceTotal() {
+        const total = currentInvoiceItems.reduce((sum, item) => sum + (parseFloat(item.price) || 0), 0);
+        document.getElementById('invoiceTotal').innerText = total.toFixed(2);
+        return total;
+    }
+
+    async function saveInvoice() {
+        if (currentInvoiceItems.length === 0) {
+            alert("Please add at least one medicine to the invoice.");
+            return;
+        }
+        const total = updateInvoiceTotal();
+
+        showLoader();
+        try {
+            const data = {
+                action: 'saveInvoice',
+                id: editingInvoiceId,
+                items: currentInvoiceItems,
+                total: total,
+                date: new Date().toISOString()
+            };
+            const resp = await fetch(API_URL, { method: 'POST', body: JSON.stringify(data) });
+            const result = await resp.json();
+            if (result.success) {
+                showInvoicesView();
+            } else {
+                alert("Error saving invoice.");
+            }
+        } catch (err) {
+            alert("Error saving invoice. Please try again.");
+        } finally {
+            hideLoader();
+        }
+    }
+
+    async function deleteInvoice(id) {
+        if (!confirm("Are you sure you want to delete this invoice?")) return;
+        showLoader();
+        try {
+            const resp = await fetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'deleteInvoice', id: id }) });
+            const result = await resp.json();
+            if (result.success) {
+                loadInvoices();
+            } else {
+                alert("Error deleting invoice.");
+            }
+        } finally {
+            hideLoader();
+        }
+    }
+
+    function printSingleInvoice(id) {
+        const inv = invoices.find(i => i.id == id);
+        if (!inv) return;
+
+        document.getElementById('printInvoiceNumber').innerText = 'Invoice #: ' + inv.invoiceNumber;
+        document.getElementById('printInvoiceDate').innerText = 'Date: ' + new Date(inv.date).toLocaleDateString();
+        document.getElementById('printInvoiceTotal').innerText = 'Rs. ' + inv.total;
+
+        const itemsBody = document.getElementById('printInvoiceItems');
+        itemsBody.innerHTML = (inv.items || []).map(item =>
+            `<tr><td>${escapeHtml(item.name)}</td><td>${escapeHtml(item.quantity)}</td><td>${item.price}</td></tr>`
+        ).join('');
+
+        document.body.classList.add('printing-invoice');
+        window.print();
+        document.body.classList.remove('printing-invoice');
     }
 </script>
 </body>
